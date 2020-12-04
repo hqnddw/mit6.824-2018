@@ -38,6 +38,9 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 		wg.Add(1)
 		go func(tasknum int) {
 			defer wg.Done()
+			//使用for循环处理 worker调用失败的情况
+			//	当worker正常工作时，通过break跳出for循环，
+			//	当worker失败时，在for循环内一直分配新的worker处理这项任务
 			for {
 				// 从channel中取出worker
 				worker := <-registerChan
