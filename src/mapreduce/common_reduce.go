@@ -79,8 +79,7 @@ func doReduce(
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	resFileName := mergeName(jobName, reduceTask)
-	resFile, err := os.Create(resFileName)
+	resFile, err := os.Create(outFile)
 	if err != nil {
 		fmt.Println("create resfile error:", err)
 	}

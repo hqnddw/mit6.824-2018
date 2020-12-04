@@ -1,6 +1,9 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 //
 // schedule() starts and waits for all tasks in the given phase (mapPhase
@@ -28,7 +31,32 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 	// All ntasks tasks have to be scheduled on workers. Once all tasks
 	// have completed successfully, schedule() should return.
 	//
-	// Your code here (Part III, Part IV).
+	// TODO:Your code here (Part III, Part IV).
 	//
+	var wg sync.WaitGroup
+	for i := 0; i < ntasks; i++ {
+		wg.Add(1)
+		go func(tasknum int) {
+			defer wg.Done()
+			// 从channel中取出worker
+			worker := <-registerChan
+			// 构造输入方法的参数
+			var argv DoTaskArgs
+			argv.JobName = jobName
+			argv.File = mapFiles[tasknum]
+			argv.Phase = phase
+			argv.TaskNumber = tasknum
+			argv.NumOtherPhase = n_other
+			//调用rpc中的call方法
+			ok := call(worker, "Worker.DoTask", argv, new(struct{}))
+			if ok {
+				// work使用完毕，放回channel中
+				go func() {
+					registerChan <- worker
+				}()
+			}
+		}(i)
+	}
+	wg.Wait()
 	fmt.Printf("Schedule: %v done\n", phase)
 }
