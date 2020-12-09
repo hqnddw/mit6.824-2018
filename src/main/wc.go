@@ -24,7 +24,7 @@ func mapF(filename string, contents string) []mapreduce.KeyValue {
 	words := strings.FieldsFunc(contents, f)
 	var im []mapreduce.KeyValue
 	for _, key := range words {
-		im = append(im, mapreduce.KeyValue{key, strconv.Itoa(1)})
+		im = append(im, mapreduce.KeyValue{Key: key, Value: strconv.Itoa(1)})
 	}
 	return im
 }

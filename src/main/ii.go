@@ -22,7 +22,7 @@ func mapF(document string, value string) (res []mapreduce.KeyValue) {
 	words := strings.FieldsFunc(value, f)
 	var im []mapreduce.KeyValue
 	for _, key := range words {
-		im = append(im, mapreduce.KeyValue{key, document})
+		im = append(im, mapreduce.KeyValue{Key: key, Value: document})
 	}
 	return im
 }
