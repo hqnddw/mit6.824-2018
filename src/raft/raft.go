@@ -48,7 +48,7 @@ type ApplyMsg struct {
 //
 // A Go object implementing a single Raft peer.
 //
-type State uint8
+type State uint16
 
 const (
 	FOLLOWER  State = 0
@@ -67,11 +67,13 @@ type Raft struct {
 	currentTerm int // latest term server has seen
 	votedFor    int // candidateId that received vote in current term
 	state       State
-	voteCh      chan struct{}
-	appendCh    chan struct{}
-	timeOut     time.Duration
-	timer       *time.Timer
-	voteCount   int
+
+	voteCh   chan struct{}
+	appendCh chan struct{}
+
+	timeout   time.Duration
+	timer     *time.Timer
+	voteCount int
 }
 
 // return currentTerm and whether this server
@@ -172,18 +174,27 @@ type AppendEntriesReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// TODO: Your code here (2A, 2B).
+	fmt.Printf("raft%v Lock\n", rf.me)
 	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	if args.Term > rf.currentTerm && rf.votedFor == -1 {
+	defer func() { fmt.Printf("raft%v Unlock\n", rf.me); rf.mu.Unlock() }()
+	fmt.Printf("args.term:%v, currentTerm:%v, received server:%v, stat:%v\n", args.Term, rf.currentTerm, rf.me, rf.state)
+	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
-		rf.votedFor = args.CandidateId
 		rf.state = FOLLOWER
+		rf.votedFor = -1
 		reply.VoteGranted = true
-	} else if args.Term < rf.currentTerm {
-		reply.Term = rf.currentTerm
+	} else if rf.votedFor == -1 {
+		reply.VoteGranted = true
+		rf.votedFor = args.CandidateId
+		fmt.Printf("raft%v vote for raft%v\n", rf.me, args.CandidateId)
+	} else {
 		reply.VoteGranted = false
 	}
-
+	if args.Term < rf.currentTerm {
+		fmt.Printf("raft%v don't vote for raft%v\n", rf.me, args.CandidateId)
+		reply.VoteGranted = false
+		reply.Term = rf.currentTerm
+	}
 	go func() {
 		rf.voteCh <- struct{}{}
 	}()
@@ -294,6 +305,7 @@ func (rf *Raft) tranState(state State) {
 	if state == CANDIDATE {
 		rf.state = CANDIDATE
 		fmt.Printf("raft%v become candidate\n", rf.me)
+		fmt.Printf("raft%v 发起选举\n", rf.me)
 		rf.election()
 	}
 	if state == LEADER {
@@ -305,7 +317,7 @@ func (rf *Raft) tranState(state State) {
 func (rf *Raft) election() {
 	rf.currentTerm += 1
 	rf.votedFor = rf.me
-	rf.timer.Reset(rf.timeOut)
+	rf.timer.Reset(rf.timeout)
 	rf.voteCount = 1
 	argv := RequestVoteArgs{}
 	argv.Term = rf.currentTerm
@@ -337,26 +349,32 @@ func (rf *Raft) startLoop() {
 		case FOLLOWER:
 			select {
 			case <-rf.voteCh:
-				rf.timer.Reset(rf.timeOut)
+				fmt.Printf("FOLLOWER%d: 收到candidate节点要求投票的消息\n", rf.me)
+				rf.timer.Reset(rf.timeout)
 			case <-rf.appendCh:
-				rf.timer.Reset(rf.timeOut)
+				fmt.Printf("FOLLOWER%d: 收到leader节点发送的心跳包消息\n", rf.me)
+				rf.timer.Reset(rf.timeout)
 			case <-rf.timer.C:
+				fmt.Printf("FOLLOWER%d: election timeout时间内没有收到任何消息，转为candidate状态\n", rf.me)
 				rf.tranState(CANDIDATE)
 			}
 		case CANDIDATE:
 			select {
 			case <-rf.appendCh:
-				rf.timer.Reset(rf.timeOut)
+				//rf.timer.Reset(rf.timeout)
 				rf.mu.Lock()
 				rf.tranState(FOLLOWER)
 				rf.mu.Unlock()
+				fmt.Printf("CANDIDATE%d: 收到leader节点发送的心跳包消息\n", rf.me)
 			case <-rf.timer.C:
 				rf.election()
+				fmt.Printf("CANDIDATE%d: 发起选举\n", rf.me)
 			default:
 				if rf.voteCount > len(rf.peers)/2 {
 					rf.mu.Lock()
 					rf.tranState(LEADER)
 					rf.mu.Unlock()
+					fmt.Printf("CANDIDATE%d: 成为LEADER\n", rf.me)
 				}
 			}
 		case LEADER:
@@ -409,9 +427,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.voteCh = make(chan struct{})
 	rf.appendCh = make(chan struct{})
 
-	ms := time.Duration(150+(rand.Int63()%150)) * time.Millisecond
-	rf.timeOut = ms
-	rf.timer = time.NewTimer(rf.timeOut)
+	ms := time.Duration(300+(rand.Int63()%200)) * time.Millisecond
+	rf.timeout = ms
+	rf.timer = time.NewTimer(rf.timeout)
 	go rf.startLoop()
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
